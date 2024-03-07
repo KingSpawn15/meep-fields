@@ -1,0 +1,8 @@
+in set1 everything standard
+in set2 flipped sign of current y
+in set3 0 current y
+in set4 changed depth to alpha
+
+in set5 revert back tp set1 but store both angles
+in set6 flipped sign of current y
+in set7 its not 0 and 90 its 80 and 100
