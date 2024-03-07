@@ -6,3 +6,12 @@ in set4 changed depth to alpha
 in set5 revert back tp set1 but store both angles
 in set6 flipped sign of current y
 in set7 its not 0 and 90 its 80 and 100
+in set8 its not 0 and 90 its 70 and 110
+in set9 its not 0 and 90 its 60 and 120
+
+Bizarre set 7 and 9 are all the same
+
+in set11 its not 0 and 90 its 0 and 90, that seems ok
+in set12 its 45 and 135 strange pattern of fields. To compare the magnitude I should do 0 and 45
+in set13 its 0 and 45 strange pattern of fields.
+in set14 its 30 and 15. will it reprodruce asymmetry?
