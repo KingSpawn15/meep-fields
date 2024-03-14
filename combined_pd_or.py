@@ -79,7 +79,7 @@ def photodember_source(params, xmax, ymax):
     sl = [[mp.Source(
         src=mp.CustomSource(src_func=current_photodember(params, xi, yi)),
         center=mp.Vector3(xi,-yi),
-        component=mp.Ey) for xi in np.linspace(-xmax,xmax,100)] for yi in np.linspace(0,ymax,5)]
+        component=mp.Ey) for xi in np.arange(-np.fix(xmax),np.fix(xmax) + 0.5, 0.5)] for yi in np.linspace(0,ymax,5)]
     return list(chain(*sl))
 
 
@@ -111,13 +111,13 @@ if __name__ == '__main__':
         't0_sec': 0.2e-12,
         'weight': 1,
         'alpha': inas['alpha'],
-        'sigma_spot': 10,
+        'sigma_spot': 40 / np.sqrt(8 * np.log(2)),
         'neq': inas['n_eq'],
         'nexc_0': inas['n_exc_0'],
         'gamma': inas['gamma_p_sec_1']
     }
 
-    xmax = 2 * params['sigma_spot']
+    xmax = 4 * params['sigma_spot']
     ymax = 3 * (1 / params['alpha'])
     source_pd = photodember_source(params, xmax, ymax)
 
@@ -156,9 +156,9 @@ if __name__ == '__main__':
     # plt.show()
 
     (x,y,z,w)=sim_pd.get_array_metadata(center=mp.Vector3(0,1), size=mp.Vector3(sx,0))
-    print('it came here')
+   
     if mp.am_master():
-        print('here as well')
+   
         # Check whether the specified path exists or not
         path = 'saved_matrices/' + outdir
         isExist = os.path.exists(path)
@@ -177,7 +177,7 @@ if __name__ == '__main__':
                 extent = [0,time_range,-sx/2,sx/2])
         # plt.clim(vmin=-mm, vmax=mm)
         plt.colorbar()
-        plt.savefig(path + '/pdfield.png', dpi=300)
+        plt.savefig(path + '/pdfield_4sigma.png', dpi=300)
 
         out_str = path + '/field_ez_pd'  + '.mat'
         savemat(out_str, {'e_pd': vals_pd, 'zstep': x[2]-x[1], 'tstep' : record_interval / Time_MEEP_To_Sec * 1e12})
