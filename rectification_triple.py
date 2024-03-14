@@ -181,7 +181,7 @@ if __name__ == '__main__':
     vals_z = []
 
     def get_slice(vals, distance_from_surface):
-        return lambda sim : vals.append(sim.get_array(center=mp.Vector3(0,distance_from_surface), size=mp.Vector3(sx,0), component=mp.Ez))
+        return lambda sim : vals.append(sim.get_array(center=mp.Vector3(0,distance_from_surface), size=mp.Vector3(sx,0), component=mp.Ex))
 
     record_interval = 2
     distance_from_surface = 1
