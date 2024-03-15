@@ -1,5 +1,8 @@
 #!/bin/bash
 
-outdir='photodember'
 
-mpirun -np 10 python3.11 combined_pd_or.py $outdir
+
+mpirun -np 10 python3.11 combined_pd_or.py 5
+mpirun -np 10 python3.11 combined_pd_or.py 0.5
+
+
