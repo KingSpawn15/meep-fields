@@ -185,7 +185,7 @@ if __name__ == '__main__':
 
     record_interval = 2
     distance_from_surface = 1
-    simulation_end_time_meep = 500
+    simulation_end_time_meep = 1000
 
     sim_or_x.reset_meep()
     sim_or_x.run(mp.at_every(record_interval, get_slice(vals_x, distance_from_surface)),

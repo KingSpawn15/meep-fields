@@ -90,8 +90,9 @@ def photodember_source(params, xmax, ymax):
 if __name__ == '__main__':
 
     
-    outdir = 'photodember/spot_size_30'
+    outdir = 'photodember/spot_size_30_shift04'
     intensity = float(sys.argv[1])
+    t0_sec = float(sys.argv[2]) * 1e-12
 
     Freq_Hz_To_MEEP = 3 * 10**14
     Time_Sec_To_MEEP = (1e-6 / 3e8)
@@ -114,7 +115,7 @@ if __name__ == '__main__':
     inas_meep = mp.Medium(epsilon=inas['epsilon_inf'], E_susceptibilities=[sus_phonon, sus_plasma])
 
     params = {
-        't0_sec': 0.2e-12,
+        't0_sec': t0_sec,
         'weight': 1,
         'alpha': inas['alpha'],
         'sigma_spot': 30 / np.sqrt(8 * np.log(2)),
@@ -151,7 +152,7 @@ if __name__ == '__main__':
 
     record_interval = 2
     distance_from_surface = 1
-    simulation_end_time_meep = 500
+    simulation_end_time_meep = 1000
 
     sim_pd.reset_meep()
     sim_pd.run(mp.at_every(record_interval, get_slice(vals_pd, distance_from_surface)),
@@ -182,7 +183,7 @@ if __name__ == '__main__':
         plt.colorbar()
         plt.savefig(path + '/pdfield_'+ sys.argv[1] + '.png', dpi=300)
 
-        out_str = path + '/field_ez_pd_intensity_' + sys.argv[1] + '.mat'
+        out_str = path + '/field_ez_pd_intensity_' + sys.argv[1] + 't0_' + sys.argv[2] + '.mat'
         savemat(out_str, {'e_pd': vals_pd, 'zstep': x[2]-x[1], 'tstep' : record_interval / Time_MEEP_To_Sec * 1e12})
 
 
