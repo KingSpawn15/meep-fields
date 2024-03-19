@@ -90,7 +90,7 @@ def photodember_source(params, xmax, ymax):
 if __name__ == '__main__':
 
     
-    outdir = 'photodember/spot_size_30_shift04'
+    outdir = 'photodember/varying_intensities'
     intensity = float(sys.argv[1])
     t0_sec = float(sys.argv[2]) * 1e-12
 
