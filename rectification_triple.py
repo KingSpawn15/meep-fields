@@ -27,19 +27,21 @@ class ProblemSetup:
         self._dpml = dpml
         self._resolution = resolution
 
+    
 def indium_arsenide():
     inas = {
         "n_exc_0" : 3.14e23,
         "n_eq" : 1.0e23,
         "gamma_p_sec_1" : 3.3e12, 
-        "alpha" : 1.0/7,
+        "alpha" : 7,
         "epsilon_inf" : 12, 
         "epsilon_0" : 15,
         "omega_TO_cm_1" : 218, 
         "omega_LO_cm_1" : 240, 
-        "gamma_ph_cm_1" : 3.5}
+        "gamma_ph_cm_1" : 3.5,
+        "v_t_m_sec_1" : 7.66e5}
     return inas
-    
+
 def drude_material_meep(n_eq, gamma_p_sec_1, epsilon_inf):
 
     f_p = 20.7539 * np.sqrt(n_eq) / (2 * np.pi) / Freq_Hz_To_MEEP
@@ -58,10 +60,11 @@ def lorentz_material_meep(omega_TO_cm_1, gamma_ph_cm_1, epsilon_0, epsilon_inf):
 
 def current_rectification(sigma_t_sec, t0_sec, weight):
     
+    weight = 50e-15 / np.sqrt(8 * np.log(2)) / sigma_t_sec
     t0 = t0_sec / Time_Sec_To_MEEP
     sigma_t = sigma_t_sec / Time_Sec_To_MEEP
 
-    return lambda t: - weight * (t-t0) * np.exp(- ((t-t0) ** 2) / (2 * sigma_t **2))
+    return lambda t: - weight * (t-t0) * np.exp(- ((t-t0) ** 2) / (2 * sigma_t **2)) / (2 * sigma_t **2)
 
 
 # def polarized_source(phi, sigma_t_sec, t0_sec, source_x, source_y):
@@ -83,21 +86,21 @@ def current_rectification(sigma_t_sec, t0_sec, weight):
 def polarized_source_z(sigma_t_sec, t0_sec, source_x, source_y):
     return  [
             mp.Source(
-        src=mp.CustomSource(src_func=current_rectification(sigma_t_sec, t0_sec, 1)),
+        src=mp.CustomSource(src_func=current_rectification(sigma_t_sec, t0_sec, 1), is_integrated=False),
         center=mp.Vector3(source_x,source_y),
         component=mp.Ex)
             ]
 def polarized_source_y(sigma_t_sec, t0_sec, source_x, source_y):
     return  [
             mp.Source(
-        src=mp.CustomSource(src_func=current_rectification(sigma_t_sec, t0_sec, 1)),
+        src=mp.CustomSource(src_func=current_rectification(sigma_t_sec, t0_sec, 1), is_integrated=False),
         center=mp.Vector3(source_x,source_y),
         component=mp.Ez)
             ]
 def polarized_source_x(sigma_t_sec, t0_sec, source_x, source_y):
     return  [
             mp.Source(
-        src=mp.CustomSource(src_func=current_rectification(sigma_t_sec, t0_sec, 1)),
+        src=mp.CustomSource(src_func=current_rectification(sigma_t_sec, t0_sec, 1), is_integrated=False),
         center=mp.Vector3(source_x,source_y),
         component=mp.Ey)
             ]
@@ -109,6 +112,7 @@ if __name__ == '__main__':
 
     pulse_time_fwhm_fs = float(sys.argv[1])
     outdir = sys.argv[2]
+    t0_ps = float(sys.argv[3])
 
     Freq_Hz_To_MEEP = 3 * 10**14
     Time_Sec_To_MEEP = (1e-6 / 3e8)
@@ -128,9 +132,9 @@ if __name__ == '__main__':
     sus_phonon = mp.LorentzianSusceptibility(frequency=f_ph, sigma=sigma_ph, gamma=gamma_ph)
     inas_meep = mp.Medium(epsilon=inas['epsilon_inf'], E_susceptibilities=[sus_phonon, sus_plasma])
 
-    pulse_time_fwhm_fs = float(sys.argv[1])
+    
     sigma_t_sec = pulse_time_fwhm_fs * 1e-15 / np.sqrt(8 * np.log(2))
-    t0_sec = 0.2e-12
+    t0_sec = t0_ps * 1e-12
     source_x = 0
     source_y = - (1 / inas["alpha"])
     
@@ -212,7 +216,7 @@ if __name__ == '__main__':
             os.makedirs(path)
             print("The new directory is created!")
 
-        out_str = path + '/field_ez' + str(pulse_time_fwhm_fs) + '_fs' + '.mat'
+        out_str = path + '/field_ez' + str(pulse_time_fwhm_fs) + '_fs' +'shift'+str(t0_ps)+ '_ps'+ '.mat'
         savemat(out_str, {'e_or_x': vals_x,
                           'e_or_y': vals_y,
                            'e_or_z': vals_z,

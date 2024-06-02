@@ -4,7 +4,7 @@ import meep as mp
 import numpy as np
 from matplotlib import pyplot as plt
 from itertools import chain
-from scipy.interpolate import RegularGridInterpolator
+from scipy.interpolate import RegularGridInterpolator , interp1d
 from scipy.io import savemat
 from eels_utils.ElectronSpectrum import ElectronSpectrum as es
 
@@ -64,23 +64,108 @@ def current_rectification(sigma_t_sec, t0_sec, weight):
 
     return lambda t: - weight * (t-t0) * np.exp(- ((t-t0) ** 2) / (2 * sigma_t **2))
 
-def current_photodember(params, xprime, yprime):
-    nexc = params['nexc_0'] * np.exp(-yprime * params['alpha']) * np.exp(-xprime**2 / (2 * params['sigma_spot']**2))
+# def current_photodember(params, xprime, yprime):
+#     nexc = params['nexc_0'] * np.exp(-yprime * params['alpha']) * np.exp(-xprime**2 / (2 * params['sigma_spot']**2))
 
+#     if nexc > 3.14e23:
+#         nexc = 3.14e23
+
+#     omega_eq = 20.7539 * np.sqrt(params['neq'])
+#     omega_exc = 44.5865 * np.sqrt(nexc)
+#     omega_z_sec = np.sqrt(omega_exc**2 + omega_eq**2 - params['gamma']**2 / 4)
+#     omega_z = omega_z_sec / Freq_Hz_To_MEEP
+    
+#     t0 = params['t0_sec'] / Time_Sec_To_MEEP
+
+#     prefactor = (nexc) * 1e-18 * params['alpha'] * (params['v_t_m_sec_1'] / 3e8)**2 
+#     return lambda t: prefactor * np.sin(omega_z * (t-t0)) * np.exp(-(params['gamma'] / Freq_Hz_To_MEEP) * (t-t0)/2) / omega_z if t>t0 else 0
+
+
+def current_photodember_with_pulse_time(params, xprime, yprime):
+    # Precompute constants
+    alpha = params['alpha']
+    sigma_spot_sq = params['sigma_spot']**2
+    gamma_over_freq = params['gamma'] / Freq_Hz_To_MEEP
+    v_t_m_sec_1_over_c = params['v_t_m_sec_1'] / 3e8
+    t0 = params['t0_sec'] / Time_Sec_To_MEEP
+    fwhm_t_fs_sqrt_log = params['fwhm_t_fs'] * 1e-15 / np.sqrt(8 * np.log(2))
+
+    # Precompute nexc
+    nexc = params['nexc_0']  * np.exp(-xprime**2 / (2 * sigma_spot_sq))
+    nexc = np.minimum(nexc, 3.14e23 * 1.7 / 2) * np.exp(-yprime * alpha)
+
+    # Precompute omegas
     omega_eq = 20.7539 * np.sqrt(params['neq'])
     omega_exc = 44.5865 * np.sqrt(nexc)
-    omega_z_sec = np.sqrt(omega_exc**2 + omega_eq**2 - params['gamma']**2 / 4)
+    omega_z_sec = np.sqrt(omega_exc**2 + omega_eq**2 - gamma_over_freq**2 / 4)
     omega_z = omega_z_sec / Freq_Hz_To_MEEP
+
+    # Precompute prefactor
+    prefactor = nexc * 1e-18 * alpha * v_t_m_sec_1_over_c**2 
+
+    # Precompute j_pd and pulse_envelope
+    tt = np.linspace(-500,2000,1500)
+    j_pd = prefactor * np.sin(omega_z * (tt-t0)) * np.exp(-gamma_over_freq * (tt-t0)/2) / omega_z
+    j_pd[tt <= t0] = 0
+    sigma_t_meep = fwhm_t_fs_sqrt_log / Time_Sec_To_MEEP
+    pulse_envelope = (1 / sigma_t_meep) * np.exp(-tt**2 / (2 * sigma_t_meep**2))
+
+    # Convolve j_pd and pulse_envelope
+    padding = 2000  # Increase this value to add more zeros
+    pulse_envelope_padded = np.pad(pulse_envelope, (0, padding), 'constant')
+    j_pd_padded = np.pad(j_pd, (0, padding), 'constant')
+    convolved_padded = np.convolve(j_pd_padded, pulse_envelope_padded, mode='full')
+    convolved = convolved_padded[:len(tt)]
     
-    t0 = params['t0_sec'] / Time_Sec_To_MEEP
+    tt_max = 2000
+    tt_min = -500
+    return lambda t: np.interp(t + 500, tt, convolved) if tt_min <= t + 500 <= tt_max else 0
 
-    prefactor = (nexc) * 1e-18 * params['alpha'] * (params['v_t_m_sec_1'] / 3e8)**2 
-    return lambda t: prefactor * np.sin(omega_z * (t-t0)) * np.exp(-(params['gamma'] / Freq_Hz_To_MEEP) * (t-t0)/2) / omega_z if t>t0 else 0
 
+
+# def current_photodember_with_pulse_time_old(params, xprime, yprime):
+#     nexc = params['nexc_0'] * np.exp(-yprime * params['alpha']) * np.exp(-xprime**2 / (2 * params['sigma_spot']**2))
+
+#     if nexc > 3.14e23 / 2:
+#         nexc = 3.14e23 / 2
+
+#     omega_eq = 20.7539 * np.sqrt(params['neq'])
+#     omega_exc = 44.5865 * np.sqrt(nexc)
+#     omega_z_sec = np.sqrt(omega_exc**2 + omega_eq**2 - params['gamma']**2 / 4)
+#     omega_z = omega_z_sec / Freq_Hz_To_MEEP
+    
+#     t0 = params['t0_sec'] / Time_Sec_To_MEEP
+
+#     prefactor = (nexc) * 1e-18 * params['alpha'] * (params['v_t_m_sec_1'] / 3e8)**2 
+
+#     j_pd = lambda t: prefactor * np.sin(omega_z * (t-t0)) * np.exp(-(params['gamma'] / Freq_Hz_To_MEEP) * (t-t0)/2) / omega_z if t>t0 else 0
+    
+#     sigma_t_sec = params['fwhm_t_fs'] * 1e-15 / np.sqrt(8 * np.log(2))
+#     sigma_t_meep = sigma_t_sec / Time_Sec_To_MEEP
+#     pulse_envelope = lambda t: (1 / sigma_t_meep) * np.exp(-(t) ** 2 / (2 * sigma_t_meep ** 2))
+
+#     j_pd_v = np.vectorize(j_pd)
+#     pulse_envelope_v = np.vectorize(pulse_envelope)
+
+#     tt = np.linspace(-500,2000,1500)
+
+#     padding = 2000  # Increase this value to add more zeros
+#     pulse_envelope_padded = np.pad(pulse_envelope_v(tt), (0, padding), 'constant')
+#     j_pd_padded = np.pad(j_pd_v(tt), (0, padding), 'constant')
+
+#     # Convolve yy2 and j_pd
+#     convolved_padded = np.convolve(j_pd_padded, pulse_envelope_padded, mode='full')
+#     convolved = convolved_padded[:len(tt)]
+    
+#     tt_max = 2000
+#     tt_min = -500
+#     return lambda t: np.interp(t + 500, tt, convolved) if tt_min <= t + 500 <= tt_max else 0
+#     # return lambda t: pulse_envelope(t)
+  
 
 def photodember_source(params, xmax, ymax):
     sl = [[mp.Source(
-        src=mp.CustomSource(src_func=current_photodember(params, xi, yi)),
+        src=mp.CustomSource(src_func=current_photodember_with_pulse_time(params, xi, yi)),
         center=mp.Vector3(xi,-yi),
         component=mp.Ey) for xi in np.arange(-np.fix(xmax),np.fix(xmax) + 0.5, 0.5)] for yi in np.linspace(0,ymax,5)]
     return list(chain(*sl))
@@ -90,9 +175,14 @@ def photodember_source(params, xmax, ymax):
 if __name__ == '__main__':
 
     
-    outdir = 'photodember/varying_intensities'
+    outdir = 'photodember/combined'
     intensity = float(sys.argv[1])
     t0_sec = float(sys.argv[2]) * 1e-12
+    fwhm_t_fs = float(sys.argv[3])
+    # intensity = 10
+    # t0_sec = 1 * 1e-12
+    # fwhm_t_fs = 50
+    
 
     Freq_Hz_To_MEEP = 3 * 10**14
     Time_Sec_To_MEEP = (1e-6 / 3e8)
@@ -118,14 +208,69 @@ if __name__ == '__main__':
         't0_sec': t0_sec,
         'weight': 1,
         'alpha': inas['alpha'],
-        'sigma_spot': 30 / np.sqrt(8 * np.log(2)),
+        'sigma_spot': 20 / np.sqrt(8 * np.log(2)),
         'neq': inas['n_eq'],
-        'nexc_0': inas['n_exc_0'] * intensity / 10,
+        'nexc_0': inas['n_exc_0'] * intensity / 2 / 10 * 1.7,
         'gamma': inas['gamma_p_sec_1'],
-        'v_t_m_sec_1' : inas['v_t_m_sec_1']
+        'v_t_m_sec_1' : inas['v_t_m_sec_1'],
+        'fwhm_t_fs' : fwhm_t_fs
     }
 
-    xmax = 4 * params['sigma_spot']
+    # current_pd = np.vectorize(current_photodember(params, 0, 0))
+    # tt = np.array(np.linspace(-500,2000,1000))
+    # j_pd = current_pd(tt)
+
+    # # Define multiple sigma_t_sec values
+    # sigma_t_sec_values = [50e-15, 70e-15, 150e-15, 350e-15]  # Add more values as needed
+    # # sigma_t_sec_values = [70e-15]  # Add more values as needed
+
+    # # Initialize a figure for plotting
+    # plt.figure(figsize=(10, 6))
+
+    # for sigma_t_sec in sigma_t_sec_values:
+    #     sigma_t_meep = sigma_t_sec / Time_Sec_To_MEEP
+
+    #     pulse_fn = lambda t: (1 / sigma_t_meep) * np.exp(-(t - 0 / Time_Sec_To_MEEP) ** 2 / (2 * sigma_t_meep ** 2))
+    #     pulse_fn_v = np.vectorize(pulse_fn)
+    #     yy2 = pulse_fn_v(tt)
+
+    #     # New code to pad yy2 and j_pd with more zeros
+    #     padding = 2000  # Increase this value to add more zeros
+    #     yy2_padded = np.pad(yy2, (0, padding), 'constant')
+    #     j_pd_padded = np.pad(j_pd, (0, padding), 'constant')
+
+    #     # Convolve yy2 and j_pd
+    #     convolved_padded = np.convolve(yy2_padded, j_pd_padded, mode='full')
+
+    #     # Trim convolved signal to original length
+    #     # h = lambda t : np.convolve(np.pad(pulse_fn(t),(0 , padding),'constant'),
+    #     #                             np.pad(current_pd(t),(0 , padding),'constant'),
+    #     #                             mode='same')
+    #     # hv = np.vectorize(h)
+
+    #     shift = 0
+    #     convolved = convolved_padded[shift:shift+len(tt)]
+    #     # convolved = hv(tt)
+
+    #     # Plot the convolved signal for this sigma_t_sec value
+    #     plt.plot((tt - 500) / Time_MEEP_To_Sec * 1e12, convolved, label=f'sigma_t_sec = {sigma_t_sec}')
+    #     # plt.plot(convolved_padded)
+
+    # # Add legend and show the plot
+
+    # plt.plot(tt / Time_MEEP_To_Sec * 1e12, j_pd, label='instantaneous')
+    # plt.xlabel('Time (ps)')
+    # plt.ylabel('Current (j_pd)')
+    # plt.title('Current vs Time')
+    # plt.legend()
+    # plt.grid(True)
+    # plt.xlim((-.3,3))
+    # plt.show()
+    
+
+    # print(len(convolved_padded), len(tt), padding)
+
+    xmax = 6 * params['sigma_spot']
     ymax = 3 * (1 / params['alpha'])
     source_pd = photodember_source(params, xmax, ymax)
 
@@ -135,6 +280,7 @@ if __name__ == '__main__':
         center=mp.Vector3(0,-sy/4 - dpml/2),
         material=inas_meep,
     )]
+
 
     sim_pd = mp.Simulation(
         cell_size=mp.Vector3(sx + 2 * dpml, sy + 2 * dpml),
@@ -181,9 +327,9 @@ if __name__ == '__main__':
                 extent = [0,time_range,-sx/2,sx/2])
         # plt.clim(vmin=-mm, vmax=mm)
         plt.colorbar()
-        plt.savefig(path + '/pdfield_'+ sys.argv[1] + '.png', dpi=300)
+        plt.savefig(path + '/pdfield_'+ sys.argv[1] + 'fwhm_t_' + sys.argv[3]+'.png', dpi=300)
 
-        out_str = path + '/field_ez_pd_intensity_' + sys.argv[1] + 't0_' + sys.argv[2] + '.mat'
+        out_str = path + '/field_ez_pd_intensity_' + sys.argv[1] + 't0_' + sys.argv[2] + 'fwhm_t_' + sys.argv[3] + '.mat'
         savemat(out_str, {'e_pd': vals_pd, 'zstep': x[2]-x[1], 'tstep' : record_interval / Time_MEEP_To_Sec * 1e12})
 
 
