@@ -92,7 +92,7 @@ def current_photodember_with_pulse_time(params, xprime, yprime):
 
     # Precompute nexc
     nexc = params['nexc_0']  * np.exp(-xprime**2 / (2 * sigma_spot_sq))
-    nexc = np.minimum(nexc, 3.14e23 * 1.7 / 2) * np.exp(-yprime * alpha)
+    nexc = nexc * np.exp(-yprime * alpha)
 
     # Precompute omegas
     omega_eq = 20.7539 * np.sqrt(params['neq'])
@@ -175,7 +175,7 @@ def photodember_source(params, xmax, ymax):
 if __name__ == '__main__':
 
     
-    outdir = 'photodember/combined'
+    outdir = 'photodember/air'
     intensity = float(sys.argv[1])
     t0_sec = float(sys.argv[2]) * 1e-12
     fwhm_t_fs = float(sys.argv[3])
@@ -208,9 +208,9 @@ if __name__ == '__main__':
         't0_sec': t0_sec,
         'weight': 1,
         'alpha': inas['alpha'],
-        'sigma_spot': 20 / np.sqrt(8 * np.log(2)),
+        'sigma_spot': 40 / np.sqrt(8 * np.log(2)),
         'neq': inas['n_eq'],
-        'nexc_0': inas['n_exc_0'] * intensity / 2 / 10 * 1.7,
+        'nexc_0': inas['n_exc_0'] * intensity / 10 ,
         'gamma': inas['gamma_p_sec_1'],
         'v_t_m_sec_1' : inas['v_t_m_sec_1'],
         'fwhm_t_fs' : fwhm_t_fs
@@ -270,7 +270,7 @@ if __name__ == '__main__':
 
     # print(len(convolved_padded), len(tt), padding)
 
-    xmax = 6 * params['sigma_spot']
+    xmax = 3 * params['sigma_spot']
     ymax = 3 * (1 / params['alpha'])
     source_pd = photodember_source(params, xmax, ymax)
 
@@ -278,7 +278,7 @@ if __name__ == '__main__':
     mp.Block(
         mp.Vector3(mp.inf, sy/2 + dpml, mp.inf),
         center=mp.Vector3(0,-sy/4 - dpml/2),
-        material=inas_meep,
+        material=mp.air,
     )]
 
 

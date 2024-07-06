@@ -2,4 +2,6 @@
 *.mat
 *.png
 *.jpeg
+*.vtk
+*.h5
 
