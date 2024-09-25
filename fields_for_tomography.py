@@ -4,9 +4,8 @@ import meep as mp
 import numpy as np
 from matplotlib import pyplot as plt
 from itertools import chain
-from scipy.interpolate import RegularGridInterpolator , interp1d
 from scipy.io import savemat
-from eels_utils.ElectronSpectrum import ElectronSpectrum as es
+
 
 
 class ProblemSetup:
