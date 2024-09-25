@@ -1,0 +1,79 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+
+# Parameters
+L = 200       # Length of the rod
+T = 2       # Total time
+Nz = 50     # Number of spatial points
+Nt = 1000   # Number of time points
+D = 0.1     # Diffusion coefficient
+
+dz = L / Nz   # Spatial step size
+dt = T / Nt   # Time step size
+
+# Stability criterion
+if D * dt / dz**2 >= 0.5:
+    raise ValueError("The solution is unstable. Please choose smaller dt or larger dz.")
+
+# Initial condition: u(z, 0) = exp(-alpha * (z - z0))
+z = np.linspace(0, L, Nz+1)
+
+# gaussian conditions
+z0 = L/2
+sigma_z = 40/np.sqrt(8 * np.log(2))
+u = np.exp(-(z-z0)**2 / (2 * sigma_z ** 2))
+# Absorbing boundary conditions: u(0, t) = u(L, t) = 0
+u[0] = 0
+u[-1] = 0
+
+# Matrix to store the solution at each time step
+u_matrix = np.zeros((Nt+1, Nz+1))
+u_matrix[0, :] = u
+
+# Time-stepping loop
+for n in range(0, Nt):
+    u_new = np.copy(u)
+    for i in range(1, Nz):
+        u_new[i] = u[i] + D * dt / dz**2 * (u[i+1] - 2*u[i] + u[i-1])
+    u_new[0] = 0
+    u_new[-1] = 0
+
+    u = u_new
+    u_matrix[n+1, :] = u
+
+# Compute the spatial derivative of u
+du_dz_matrix = np.zeros_like(u_matrix)
+for n in range(Nt+1):
+    du_dz_matrix[n, 1:-1] = (u_matrix[n, 2:] - u_matrix[n, :-2]) / (2*dz)
+
+# Plot the solution and its derivative
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+
+line1, = ax1.plot(z, u_matrix[0, :], label='u(z, t)')
+ax1.set_title('1D Diffusion Equation')
+ax1.set_xlabel('z')
+ax1.set_ylabel('u(z, t)')
+ax1.legend()
+
+line2, = ax2.plot(z, du_dz_matrix[0, :], label='du/dz')
+ax2.set_title('Spatial Derivative of u')
+ax2.set_xlabel('z')
+ax2.set_ylabel('du/dz')
+ax2.legend()
+
+def update(frame):
+    line1.set_ydata(u_matrix[frame, :])
+    line2.set_ydata(du_dz_matrix[frame, :])
+    ax1.set_title(f'Time: {frame*dt:.4f}')
+    ax2.set_title(f'Time: {frame*dt:.4f}')
+
+    # Force redraw of the canvas to update the plots
+    fig.canvas.draw()
+    plt.pause(0.01)
+
+    return line1, line2
+
+ani = FuncAnimation(fig, update, frames=range(0, Nt+1, 5), blit=True)
+plt.tight_layout()
+plt.show()

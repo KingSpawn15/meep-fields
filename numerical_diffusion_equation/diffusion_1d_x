@@ -1,0 +1,155 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from scipy.special import erf
+from scipy.constants import pi
+import matplotlib.pyplot as plt
+
+def compute_expression(alpha, dd, t, x):
+    # Compute the exponential term
+    exp_term = np.exp(alpha * (-2 * x + 2 * dd * t * alpha) / 2)
+    
+    # Compute the Gaussian term
+    gaussian_term = np.exp(-((x - 2 * dd * t * alpha) ** 2) / (4 * dd * t))
+    sqrt_term = np.sqrt(pi) * np.sqrt(dd * t)
+    first_part = gaussian_term / ( sqrt_term)
+    
+    # Compute the error function term
+    erf_term = erf((-x + 2 * dd * t * alpha) / (2 * np.sqrt(dd * t)))
+    second_part = -alpha * (-1 + erf_term)
+    
+    # Combine terms
+    result = 0.5 * exp_term * (first_part - second_part)
+    # result = erf_term 
+    return result
+
+def compute_expression_density(alpha, dd, t, x):
+    # Compute the exponential term
+    exp_term = np.exp(alpha * (-2 * x + 2 * dd * t * alpha) / 2)
+    
+    # Compute the Gaussian term
+    # gaussian_term = np.exp(-((x - 2 * dd * t * alpha) ** 2) / (4 * dd * t))
+    # sqrt_term = np.sqrt(pi) * np.sqrt(dd * t)
+    # first_part = gaussian_term / ( sqrt_term)
+    
+    # Compute the error function term
+    erf_term = erf((-x + 2 * dd * t * alpha) / (2 * np.sqrt(dd * t)))
+    second_part =  (-1 + erf_term)
+    
+    # Combine terms
+    result = -1 * exp_term * (second_part)
+    # result = erf_term 
+    return result
+
+
+# Parameters
+L = 2       # Length of the rod
+T = 2       # Total time
+Nx = 50      # Number of spatial points
+Nt = 1000      # Number of time points
+D = 0.1  # Diffusion coefficient
+
+dx = L / Nx   # Spatial step size
+dt = T / Nt   # Time step size
+
+# Stability criterion
+if D * dt / dx**2 >= 0.5:
+    raise ValueError("The solution is unstable. Please choose smaller dt or larger dx.")
+
+# Initial condition: u(x, 0) = sin(pi * x)
+x = np.linspace(0, L, Nx+1)
+
+# # gaussian conditions
+# x0 = L/2
+# sigma_x = 40/np.sqrt(8 * np.log(2))
+# u = np.exp(-(x-x0)**2 / (2 * sigma_x ** 2))
+# # Absorbing boundary conditions: u(0, t) = u(L, t) = 0
+# u[0] = 0
+# u[-1] = 0
+
+
+# expo conditions
+x0 = 0
+alpha = 7
+u = np.exp(-(x-x0) * alpha)
+# Absorbing boundary conditions: u(0, t) = u(L, t) = 0
+u[0] = u[1]
+
+# Matrix to store the solution at each time step
+u_matrix = np.zeros((Nt+1, Nx+1))
+u_matrix[0, :] = u
+
+# Time-stepping loop
+for n in range(0, Nt):
+    u_new = np.copy(u)
+    for i in range(1, Nx):
+        u_new[i] = u[i] + D * dt / dx**2 * (u[i+1] - 2*u[i] + u[i-1])
+    # u_new[0] = 0
+    # u_new[-1] = 0
+
+    u_new[0] = u_new[1]
+    u_new[-1] = 0
+
+    u = u_new
+    u_matrix[n+1, :] = u
+
+# Compute the spatial derivative of u
+du_dx_matrix = np.zeros_like(u_matrix)
+for n in range(Nt+1):
+    du_dx_matrix[n, 1:-1] = (u_matrix[n, 2:] - u_matrix[n, :-2]) / (2*dx)
+
+# Compute the spatial derivative of u
+theoretical_current = np.zeros_like(u_matrix)
+for n in range(Nt+1):
+    theoretical_current[n, :] = compute_expression(alpha, D, n * dt, x)
+
+theoretical_density = np.zeros_like(u_matrix)
+for n in range(Nt+1):
+    theoretical_density[n, :] = compute_expression_density(alpha, D, n * dt, x)
+
+# Plot the solution and its derivative
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+
+line1, = ax1.plot(x, u_matrix[0, :], label='u(x, t)')
+ax1.set_title('1D Diffusion Equation')
+ax1.set_xlabel('x')
+ax1.set_ylabel('u(x, t)')
+ax1.legend()
+
+line2, = ax2.plot(x, du_dx_matrix[0, :], label='du/dx')
+ax2.set_title('Spatial Derivative of u')
+ax2.set_xlabel('x')
+ax2.set_ylabel('du/dx')
+ax2.legend()
+
+line3, = ax2.plot(x, theoretical_current[0, :], label='du/dx')
+ax2.set_title('Spatial Derivative of u')
+ax2.set_xlabel('x')
+ax2.set_ylabel('du/dx')
+ax2.legend()
+
+line4, = ax1.plot(x, theoretical_density[0, :], label='du/dx')
+ax1.set_title('u')
+ax1.set_xlabel('x')
+ax1.set_ylabel('u')
+ax1.legend()
+
+def update(frame):
+    line1.set_ydata(u_matrix[frame, :])
+    line2.set_ydata(du_dx_matrix[frame, :])
+    line3.set_ydata(theoretical_current[frame, :])
+    line4.set_ydata(theoretical_density[frame, :])
+    ax1.set_title(f'Time: {frame*dt:.4f}')
+    ax2.set_title(f'Time: {frame*dt:.4f}')
+
+    # Force redraw of the canvas to update the plots
+    fig.canvas.draw()
+    plt.pause(0.01)
+
+    return line1, line2
+
+
+
+ani = FuncAnimation(fig, update, frames=range(0, Nt+1, 5), blit=True)
+plt.tight_layout()
+plt.show()
