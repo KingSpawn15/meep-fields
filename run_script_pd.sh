@@ -24,9 +24,11 @@
 # mpirun -np 10 python3.11 combined_pd_or.py 5.0 0.5 170
 # mpirun -np 10 python3.11 combined_pd_or.py 5.0 0.5 190
 
-mpirun -np 10 python3.11 combined_pd_or.py 10 0.5 50
+# mpirun -np 10 python3.11 combined_pd_or.py 10 0.5 50
 
 
 # mpirun -np 8 python3.11 lateral_pd.py 10 0.5 50
 # mpirun -np 10 python3.11 lateral_pd.py 10 0.5 100
 # mpirun -np 10 python3.11 lateral_pd.py 10 0.5 200
+
+mpirun -np 1 python3.11 photodember_driftdiffusion.py 10 0.5 50
