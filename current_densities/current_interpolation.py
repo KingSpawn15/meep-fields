@@ -3,7 +3,7 @@ import os
 from scipy.interpolate import RegularGridInterpolator
 from interp3d.interp3d import interp_3d
 
-def setup_interpolators():
+def setup_interpolators(jx_currents_stored, jy_currents_stored):
     data_dir = './current_densities/'
     Nx = 49
     Ny = 500
@@ -13,8 +13,8 @@ def setup_interpolators():
     T = 3
 
     # Load the stored 3D arrays from .npy files
-    jx_storage = np.load(os.path.join(data_dir, 'jx_storage.npy'))
-    jy_storage = np.load(os.path.join(data_dir, 'jy_storage.npy'))
+    jx_storage = np.load(os.path.join(data_dir, jx_currents_stored))
+    jy_storage = np.load(os.path.join(data_dir, jx_currents_stored))
 
     # Define the grid points
     x_grid = np.linspace(x_min, x_max, Nx)

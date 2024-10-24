@@ -179,11 +179,15 @@ def photodember_source(params, xmax, ymax):
 
 if __name__ == '__main__':
 
-    jx_interpolator, jy_interpolator = setup_interpolators()
-    outdir = 'photodember/drift_diffusion'
+    
+    outdir = 'photodember/drift_diffusion/inas'
     intensity = float(sys.argv[1])
     t0_sec = float(sys.argv[2]) * 1e-12
     fwhm_t_fs = float(sys.argv[3])
+    sigma_t = sys.argv[4]
+    fname_jx = f"jx_storage_sigma_t_{sigma_t}.npy"
+    fname_jy = f"jy_storage_sigma_t_{sigma_t}.npy"
+    jx_interpolator, jy_interpolator = setup_interpolators(fname_jx, fname_jy)  
     # intensity = 10
     # t0_sec = 1 * 1e-12
     # fwhm_t_fs = 50
@@ -283,7 +287,7 @@ if __name__ == '__main__':
     mp.Block(
         mp.Vector3(mp.inf, sy/2 + dpml, mp.inf),
         center=mp.Vector3(0,-sy/4 - dpml/2),
-        material=mp.air,
+        material=inas_meep,
     )]
 
 
@@ -332,9 +336,9 @@ if __name__ == '__main__':
                 extent = [0,time_range,-sx/2,sx/2])
         # plt.clim(vmin=-mm, vmax=mm)
         plt.colorbar()
-        plt.savefig(path + '/pdfield_'+ sys.argv[1] + 'fwhm_t_' + sys.argv[3]+'.png', dpi=300)
+        plt.savefig(path + '/pdfield_'+ sys.argv[1] + 'fwhm_t_' + sys.argv[3]+'sigma_t_' + sys.argv[4]+'.png', dpi=300)
 
-        out_str = path + '/field_ez_pd_intensity_' + sys.argv[1] + 't0_' + sys.argv[2] + 'fwhm_t_' + sys.argv[3] + '.mat'
+        out_str = path + '/field_ez_pd_intensity_' + sys.argv[1] + 't0_' + sys.argv[2] + 'fwhm_t_' + sys.argv[3] +'sigma_t_' + sys.argv[4]+ '.mat'
         savemat(out_str, {'e_pd': vals_pd, 'zstep': x[2]-x[1], 'tstep' : record_interval / Time_MEEP_To_Sec * 1e12})
 
 

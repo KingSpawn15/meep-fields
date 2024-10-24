@@ -31,4 +31,6 @@
 # mpirun -np 10 python3.11 lateral_pd.py 10 0.5 100
 # mpirun -np 10 python3.11 lateral_pd.py 10 0.5 200
 
-mpirun -np 1 python3.11 photodember_driftdiffusion.py 10 0.5 50
+mpirun -np 1 python3.11 photodember_driftdiffusion.py 10 0.5 50 0.1
+mpirun -np 1 python3.11 photodember_driftdiffusion.py 10 0.5 50 0.05
+mpirun -np 1 python3.11 photodember_driftdiffusion.py 10 0.5 50 0.02
