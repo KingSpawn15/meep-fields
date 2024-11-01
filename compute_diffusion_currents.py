@@ -7,92 +7,95 @@ import imageio
 from io import BytesIO
 from poisson_solver.fast_poisson_solver import fast_poisson_solver
 from matplotlib.colors import Normalize
-
-# Directory to store the arrays
-output_dir = './current_densities/eps12/'
-
-# Ensure the directory exists (optional)
+from scipy.sparse import lil_matrix, csr_matrix
+from scipy.sparse.linalg import splu
 import os
+
+output_dir = './current_densities/eps12/'
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
-    
-# Parameters
-nc = 4.6e3          # number density n0
-alpha = 7           # Decay constant
-gamma = 3.3         # Decay constant for source term
+
+nc = 4e10
+alpha = 7
+gamma = 3.3
 sigma_y = 40/np.sqrt(8 * np.log(2))
-diff = 0.1             # Diffusion coefficient
-t_r = 4             # Recombination time
-Lx = 5              # Length in x-direction
-Ly = 150            # Length in y-direction
-T = 3               # Total time
-Nx = 49             # Number of grid points in x-direction
-Ny = 500            # Number of grid points in y-direction
-Nt = 1000           # Number of time steps
-t0 = 0.5
+diff = 0.1
+t_r = 4e3
+Lx = 100
+Ly = 200
+T = 1
+Nx = 100
+Ny = 250
+Nt = 5000
+t0 = 0.1
 sigma_t = 50/np.sqrt(8 * np.log(2)) * 1e-3
 mu = 4
 
-dx = Lx / (Nx - 1)  # Grid spacing in x-direction
-dy = Ly / (Ny - 1)  # Grid spacing in y-direction
-dt = T / Nt         # Time step size
+dt = T / Nt
 
-# Stability condition check
+
+x = np.linspace(0, Lx, Nx)
+xe = np.linspace(-Lx, Lx, 2 * Nx  - 1)
+y = np.linspace(-Ly, Ly, Ny)
+dx = x[1] - x[0]
+dy = y[1] - y[0]
 if diff * dt / dx**2 > 0.5 or diff * dt / dy**2 > 0.5:
     raise ValueError('The solution is unstable. Reduce dt or increase dx and dy.')
-
-# Create grid using meshgrid
-x = np.linspace(-Lx, Lx, Nx)
-y = np.linspace(-Ly, Ly, Ny)
 X, Y = np.meshgrid(x, y)
+XE, YE = np.meshgrid(xe, y)
 
-# Initial condition
-eps = np.ones(X.shape)
-eps[X < 0] *= 12
-n_e = nc * np.exp(-alpha * X) * np.exp(-(Y**2) / (2 * sigma_y**2)) * np.exp(-t0**2 / (2 * sigma_t**2))
-n_e[X < 0] = 0
-n_h = np.copy(n_e)
-div_neE = np.zeros_like(n_e)
-phi_old = div_neE + 1e-16
-matEy = []
+eps = np.ones(XE.shape)
+eps[XE > 0] *= 12
 
+n_e = nc * alpha / (2 * np.sqrt(2) * np.pi**(3/2) * sigma_y**2 * sigma_t) * np.exp(-alpha * X) * \
+                  np.exp(-(Y**2) / (2 * sigma_y**2)) * np.exp(-(( - t0)**2) / (2 * sigma_t**2)) * 0
 
+# n_e[X < 0] = 0
 
+n_h = np.copy(n_e) * 0
+# div_neE = np.zeros_like(n_e)
+# phi_old = div_neE + 1e-16
+# matEy = []
+
+nrows, ncols = XE.shape
+hx = x[1] - x[0]
+hy = y[1] - y[0]
+
+def assemble_poisson_matrix(nrows, ncols, hx, hy, eps_in):
+    A = lil_matrix((nrows * ncols, nrows * ncols))
+    eps = eps_in.ravel()[:]
+    for i in range(nrows):
+        for j in range(ncols):
+            k = i * ncols + j
+            if i == 0 or i == nrows - 1 or j == 0 or j == ncols - 1:
+                A[k, k] = 1
+                continue
+            A[k, k] = -0.5 * (eps[k-1] + eps[k+1] + 2 * eps[k]) / hx**2 - 0.5 * (eps[k-ncols] + eps[k+ncols] + 2 * eps[k]) / hy**2
+            A[k, k + 1] = 1 / hx**2 * (eps[k] + eps[k+1]) * 0.5
+            A[k, k - 1] = 1 / hx**2 * (eps[k] + eps[k-1]) * 0.5
+            A[k, k + ncols] = 1 / hy**2 * (eps[k] + eps[k+ncols]) * 0.5
+            A[k, k - ncols] = 1 / hy**2 * (eps[k] + eps[k-ncols]) * 0.5
+    A = A.tocsc()
+    lu_A = splu(A)
+    return lu_A
 
 def poisson_solver_traditional(n_e, n_h, x, y, epsilon_0, phi, tol, max_iter, eps):
-    # Constants
-    qe = 1.6e-19  # Elementary charge in Coulombs
-
-    # Define the charge density
+    qe = 1.6e-19
     rho = qe * (n_e - n_h)
     dx = x[1] - x[0]
     dy = y[1] - y[0]
-
-    # Initialize the potential with the initial guess
     V = phi.copy()
-
-    # Set boundary conditions (V = 0 at the boundaries)
-    V[:, 0] = 0   # Left boundary
-    V[:, -1] = 0  # Right boundary
-    V[0, :] = 0   # Bottom boundary
-    V[-1, :] = 0  # Top boundary
-
-    # Iterative solver (Gauss-Seidel method)
-    converged = False
+    V[:, 0] = 0
+    V[:, -1] = 0
+    V[0, :] = 0
+    V[-1, :] = 0
     for iter in range(max_iter):
         V_old = V.copy()
-
-        # Calculate epsilon at half-grid points
-        epsilon_y1 = (eps[1:-1, 1:-1] + eps[2:, 1:-1]) / 2  # between i and i+1
-        epsilon_y2 = (eps[1:-1, 1:-1] + eps[:-2, 1:-1]) / 2  # between i and i-1
-        epsilon_x1 = (eps[1:-1, 1:-1] + eps[1:-1, 2:]) / 2  # between j and j+1
-        epsilon_x2 = (eps[1:-1, 1:-1] + eps[1:-1, :-2]) / 2  # between j and j-1
-
-        # Calculate the denominator
-        denominator = (epsilon_x1 / dx**2 + epsilon_x2 / dx**2 +
-                    epsilon_y1 / dy**2 + epsilon_y2 / dy**2)
-
-        # Update V in the inner region
+        epsilon_y1 = (eps[1:-1, 1:-1] + eps[2:, 1:-1]) / 2
+        epsilon_y2 = (eps[1:-1, 1:-1] + eps[:-2, 1:-1]) / 2
+        epsilon_x1 = (eps[1:-1, 1:-1] + eps[1:-1, 2:]) / 2
+        epsilon_x2 = (eps[1:-1, 1:-1] + eps[1:-1, :-2]) / 2
+        denominator = (epsilon_x1 / dx**2 + epsilon_x2 / dx**2 + epsilon_y1 / dy**2 + epsilon_y2 / dy**2)
         V[1:-1, 1:-1] = (1 / denominator) * (
             epsilon_y1 * V[2:, 1:-1] / dy**2 +
             epsilon_y2 * V[:-2, 1:-1] / dy**2 +
@@ -100,59 +103,48 @@ def poisson_solver_traditional(n_e, n_h, x, y, epsilon_0, phi, tol, max_iter, ep
             epsilon_x2 * V[1:-1, :-2] / dx**2 +
             rho[1:-1, 1:-1] / epsilon_0
         )
-
-
-        # Check for convergence
         if np.max(np.abs(V - V_old)) < tol:
-            converged = True
-            # print(f"Converged in {iter+1} iterations")
             break
-
-    # Calculate the electric field components (negative gradient of potential)
     E_y, E_x = np.gradient(-V, dy, dx)
+    return E_x, E_y, V, True
 
-    # Return the electric field, potential, and convergence flag
-    return E_x, E_y, V, converged
+def compute_divergence_and_field(lu_A, n_e_in, n_h_in, x, y):
+    epsilon_0 = 8.854e-18
+    q_e = 1.60217662e-19
+    n_e = n_e_in
+    n_h = n_h_in
+
+    n_e[:,0] = n_e[:,1]
+    rho_s = (n_e - n_h) * q_e 
+
+    zeroblock = np.zeros((Nx - 1, Ny))
+    rho = np.concatenate((zeroblock, rho_s.T), axis=0).T
 
 
-def compute_divergence_and_field(n_e, n_h, x, y, phi, eps):
-    # Constants
-    epsilon_0 = 8.854e-18  # Permittivity of free space
-
-    # Set tolerance and maximum iterations for the Poisson solver
-    tol = 1e-5
-    max_iter = 5000
-    
-    # Call the Poisson solver (assumed to be defined elsewhere)
-    Ex, Ey, phi, converged = fast_poisson_solver(n_e, n_h, x, y, epsilon_0, phi, tol, max_iter, eps)
-    
-    if converged == 0:
-        print("Warning: Poisson solver not converged")
-
-    # Compute grid spacing
+    phi = lu_A.solve(rho.ravel()[:] / epsilon_0).reshape(XE.shape)
     dx = x[1] - x[0]
     dy = y[1] - y[0]
+    Ey_f, Ex_f = np.gradient(-phi, dy, dx)
 
-    # Compute the gradients of the electron density n_e
-    d_n_e_dy, d_n_e_dx = np.gradient(n_e, dy, dx)
-
-    # Compute the gradients of the electric field components Ex and Ey
+    Ey = Ey_f[:, Nx -1 :]
+    Ex = Ex_f[:, Nx -1 :]
+    
     dE_x_dy, dE_x_dx = np.gradient(Ex, dy, dx)
     dE_y_dy, dE_y_dx = np.gradient(Ey, dy, dx)
 
-    # Apply the product rule to compute the divergence of n_e * E
-    div_neE = Ex * d_n_e_dx + Ey * d_n_e_dy + n_e * (dE_x_dx + dE_y_dy)
+    d_n_e_dy, d_n_e_dx = np.gradient(n_e, dy, dx)
 
+
+    div_neE = (Ex * d_n_e_dx + Ey * d_n_e_dy + n_e * (dE_x_dx + dE_y_dy)) 
     return Ex, Ey, div_neE, phi
 
+def compute_current(n_e, Ex, Ey, diff, mu, dx, dy):
 
-
-# Function to compute current
-def compute_current(n_e, Ex, Ey, D, mu, dx, dy):
     q = 1.6e-19
     d_n_e_dy, d_n_e_dx = np.gradient(n_e, dy, dx)
-    jx = -q * D * d_n_e_dx + q * mu * n_e * Ex
-    jy = -q * D * d_n_e_dy + q * mu * n_e * Ey
+    jx = -q * diff * d_n_e_dx + q * mu * n_e * Ex
+    jy = -q * diff * d_n_e_dy + q * mu * n_e * Ey
+
     return jx, jy
 
 
@@ -163,80 +155,65 @@ def initialize_plots(params):
     # Create figure and subplots
     fig, ax_list = plt.subplots(2, 3, figsize=(12, 8))
     im_list = []  # Clear the list before creating new images
-
-    # Create a subplot for n_e
+    step = 25
+    # Electron density plot
     ax = ax_list[0, 0]
-    im_n_e = ax.imshow(params['n_e'], extent=[params['x'][0], params['x'][-1], params['y'][0], params['y'][-1]], origin='lower', aspect='auto',cmap='RdPu')
-    im_n_e.set_clim(0,5)
-    ax.set_xlabel('x (µm)')
+    im_n_e = ax.imshow(params['n_e'], extent=[params['x'][0], params['x'][-1], params['y'][0], params['y'][-1]], origin='lower', aspect=0.5*Lx/Ly, cmap='RdPu')
+    im_n_e.set_clim(0, max_n_e)
+    ax_list[0, 0].quiver(X[::step, ::step], Y[::step, ::step], Ex[::step, ::step], Ey[::step, ::step])
     ax.set_ylabel('z (µm)')
-    ax.set_title(f"Electron Density at t = {params['n'] * params['dt']} (ps)")
-    cbar_n_e = fig.colorbar(im_n_e, ax=ax)
+    ax.set_title(f"Electron Density at t = {params['t']} (ps)")
+    fig.colorbar(im_n_e, ax=ax)
     im_list.append(im_n_e)
 
-    # Create a subplot for n_h
+    # Hole density plot
     ax = ax_list[0, 1]
-    im_n_h = ax.imshow(params['n_h'], extent=[params['x'][0], params['x'][-1], params['y'][0], params['y'][-1]], origin='lower', aspect='auto',cmap='RdPu', clim=(-0, 5))
-    ax.set_xlabel('x (µm)')
-    ax.set_ylabel('z (µm)')
-    ax.set_title(f"Hole Density at t = {params['n'] * params['dt']} (ps)")
-    cbar_n_h = fig.colorbar(im_n_h, ax=ax)
+    im_n_h = ax.imshow(params['n_h'], extent=[params['x'][0], params['x'][-1], params['y'][0], params['y'][-1]], origin='lower', aspect=0.5*Lx/Ly, cmap='RdPu')
+    ax.set_title(f"Hole Density at t = {params['t']} (ps)")
+    fig.colorbar(im_n_h, ax=ax)
     im_list.append(im_n_h)
 
-    # Create a subplot for source_term
+    # Source density plot
     ax = ax_list[0, 2]
-    im_source = ax.imshow(params['source_term'], extent=[params['x'][0], params['x'][-1], params['y'][0], params['y'][-1]], origin='lower', aspect='auto',cmap='hot', clim=(-0, 1))
-    ax.set_xlabel('x (µm)')
-    ax.set_ylabel('z (µm)')
-    ax.set_title(f"Source Density at t = {params['n'] * params['dt']} (ps)")
-    cbar_source = fig.colorbar(im_source, ax=ax)
+    im_source = ax.imshow(params['source_term'], extent=[params['x'][0], params['x'][-1], params['y'][0], params['y'][-1]], origin='lower', aspect=0.5*Lx/Ly, cmap='hot')
+    im_source.set_clim(0, max_source)
+    ax.set_title(f"Source Density at t = {params['t']} (ps)")
+    fig.colorbar(im_source, ax=ax)
     im_list.append(im_source)
 
-    # Create a subplot for Jx
+    # Jx plot
     ax = ax_list[1, 0]
-    im_jx = ax.imshow(params['jx'], extent=[params['x'][0], params['x'][-1], params['y'][0], params['y'][-1]], origin='lower', aspect='auto',cmap='Spectral', clim=(-1e-18,1e-18))
+    im_jx = ax.imshow(params['jx'], extent=[params['x'][0], params['x'][-1], params['y'][0], params['y'][-1]], origin='lower', aspect=0.5*Lx/Ly, cmap='Spectral')
+    im_jx.set_clim(-max_jx, max_jx)
     ax.set_xlabel('x (µm)')
     ax.set_ylabel('z (µm)')
-    ax.set_title(f"Jx at t = {params['n'] * params['dt']} (ps)")
-    cbar_jx = fig.colorbar(im_jx, ax=ax)
+    ax.set_title(f"Jx at t = {params['t']} (ps)")
+    fig.colorbar(im_jx, ax=ax)
     im_list.append(im_jx)
 
-    # Create a subplot for Jy
+    # Jy plot
     ax = ax_list[1, 1]
-    im_jy = ax.imshow(params['jy'], extent=[params['x'][0], params['x'][-1], params['y'][0], params['y'][-1]], origin='lower', aspect='auto',cmap='Spectral', clim=(-1e-20,1e-20))
+    im_jy = ax.imshow(params['jy'], extent=[params['x'][0], params['x'][-1], params['y'][0], params['y'][-1]], origin='lower', aspect=0.5*Lx/Ly, cmap='Spectral')
+    im_jy.set_clim(-max_jy, max_jy)
     ax.set_xlabel('x (µm)')
-    ax.set_ylabel('z (µm)')
-    ax.set_title(f"Jz at t = {params['n'] * params['dt']} (ps)")
-    cbar_jy = fig.colorbar(im_jy, ax=ax)
+    ax.set_title(f"Jz at t = {params['t']} (ps)")
+    fig.colorbar(im_jy, ax=ax)
     im_list.append(im_jy)
 
     plt.tight_layout()
-    # plt.draw()
-    # display(fig)  # Ensure it is displayed in Jupyter
+
 
 def plot_results(params):
     global im_list
 
-    # Clear the output for dynamic update
+    # Clear output for dynamic updates
     clear_output(wait=True)
 
-    # Update data in each plot
-    # Update data in each plot and the titles
     for i, key in enumerate(['n_e', 'n_h', 'source_term', 'jx', 'jy']):
-        im_list[i].set_data(params[key])  # Update data
-        im_list[i].set_extent([params['x'][0], params['x'][-1], params['y'][0], params['y'][-1]])  # Reset extent
-        im_list[i].set_clim(vmin=np.min(params[key]), vmax=np.max(params[key]))  # Set color limits
+        im_list[i].set_data(params[key])
+        im_list[i].set_extent([params['x'][0], params['x'][-1], params['y'][0], params['y'][-1]])
+        ax_list[i // 3, i % 3].set_title(f"{key.replace('_', ' ').title()} at t = {params['t']:.2f} ps")
 
-        # Update the title with the current time
-        ax_list[i // 3, i % 3].set_title(f"{key.replace('_', ' ').title()} at t = {params['n'] * params['dt']:.2f}")
-
-
-
-
-    # Redraw the plot with updated data and color scales
-    # plt.draw()  
-    # plt.pause(0.001)  # Pause briefly to allow updates
-    # display(fig)  # Display again in case it's needed for Jupyter
 
 # Initialize figure and axis objects globally
 fig, ax_list = None, None
@@ -247,62 +224,74 @@ frames = []
 
 
 # Initialize storage for jx and jy
-Xr, Yr = np.meshgrid(x[x>=0], y[abs(y)<100])
-jx_storage = np.zeros((*np.shape(Xr), Nt))
-jy_storage = np.zeros((*np.shape(Xr), Nt))
+# Xr, Yr = np.meshgrid(x[x>=0], y[abs(y)<100])
+# jx_storage = np.zeros((*np.shape(Xr), Nt))
+# jy_storage = np.zeros((*np.shape(Xr), Nt))
 
-for n in range(Nt):
-    n_e_new = np.copy(n_e)
-    n_h_new = np.copy(n_h)
+max_n_e=16272.605894719136
+max_n_h=0
+max_source=2898455409.8756537
+max_jx=3.687142144646383e-13
+max_jy=4.1733494316689525e-13
 
+lu_A = assemble_poisson_matrix(nrows, ncols, hx, hy, eps)
+
+def dndt(t, n_e):
     # Calculate source term
-    source_term = nc * (1 / np.sqrt(2 * np.pi * sigma_t**2)) * np.exp(-alpha * X) * \
-                  np.exp(-(Y**2) / (2 * sigma_y**2)) * np.exp(-((n * dt - t0)**2) / (2 * sigma_t**2))
-    source_term[X < 0] = 0
+    source_term = nc * alpha / (2 * np.sqrt(2) * np.pi**(3/2) * sigma_y**2 * sigma_t) * np.exp(-alpha * X) * \
+                  np.exp(-(Y**2) / (2 * sigma_y**2)) * np.exp(-((t - t0)**2) / (2 * sigma_t**2))
 
     # Finite difference for second-order derivatives
     d2_n_e_dy2 = (n_e[2:, 1:-1] - 2 * n_e[1:-1, 1:-1] + n_e[:-2, 1:-1]) / dy**2
-    d2_n_e_dx2 = (n_e[1:-1, 2:] - 2 * n_e[1:-1, 1:-1] + n_e[1:-1, :-2]) / dx**2
-
-    # Update electron density
+    d2_n_e_dx2 = (n_e[1:-1, 2:] - 2 * n_e[1:-1, 1:-1] + n_e[1:-1, :-2]) / dx**2    
     dn_dt = np.zeros_like(n_e)
-    dn_dt[1:-1, 1:-1] = diff * (d2_n_e_dx2 + d2_n_e_dy2) + source_term[1:-1, 1:-1] - \
-                        (n_h[1:-1, 1:-1] * n_e[1:-1, 1:-1] / t_r) + mu * div_neE[1:-1, 1:-1] - gamma * n_e[1:-1, 1:-1]
-    n_e_new[1:-1, 1:-1] += dt * dn_dt[1:-1, 1:-1]
+    _, _, div_neE, _ =  compute_divergence_and_field(lu_A, n_e, n_e*0, x, y)
+    dn_dt[1:-1, 1:-1] = diff * (d2_n_e_dx2 + d2_n_e_dy2)  + mu * div_neE[1:-1, 1:-1] - gamma * n_e[1:-1, 1:-1] + source_term[1:-1, 1:-1]
+    # dn_dt[1:-1, 1:-1] =  mu * div_neE[1:-1, 1:-1]
 
-    n_h_new[1:-1, 1:-1] += dt * (-n_h[1:-1, 1:-1] * n_e[1:-1, 1:-1] / t_r + source_term[1:-1, 1:-1])
+    dn_dt[0, :] = dn_dt[-1, :] = 0
+  
+    dn_dt[:, -1] = 0
 
-    # Reflecting boundary at x = 0
-    n_e_new[: , Nx//2] = n_e_new[:, Nx//2 + 1]
-    n_h_new[: , Nx//2] = n_h_new[:, Nx//2 + 1]
-
-    # Absorbing boundary conditions
-    n_e_new[0, :] = n_e_new[-1, :] = 0
-    n_e_new[:, 0] = n_e_new[:, -1] = 0
-    n_h_new[0, :] = n_h_new[-1, :] = 0
-    n_h_new[:, 0] = n_h_new[:, -1] = 0
-
-    n_e_new[:, 0:Nx//2] = 0
-    n_h_new[:, 0:Nx//2] = 0
-    # Update n_e and n_h for the next time step
-    n_e = n_e_new
-    n_h = n_h_new
-
-    # Compute divergence for the next iteration
-    Ex, Ey, div_neE, phi_old = compute_divergence_and_field(n_e, n_h, x, y, phi_old, eps)
-    jx, jy = compute_current(n_e, Ex, Ey, diff, mu, dx, dy)
-
-        # Store the current jx and jy values in the storage arrays
-    jx_storage[:, :, n] = np.reshape(jx[(X >= 0) & (np.abs(Y) < 100)], np.shape(Xr))
-    jy_storage[:, :, n] = np.reshape(jy[(X >= 0) & (np.abs(Y) < 100)], np.shape(Xr))
+    # neumann boundary
+    dn_dt[:, 0] = dn_dt[:, 1]
+    return dn_dt
 
 
-    # Collect results and plot every 20 steps
-    if n % 5 == 0:
+# Perform the RK4 integration
+t = 0.0
+for n in range(Nt):
+    
+
+    k1 = dt * dndt(t, n_e)
+    k2 = dt * dndt(t + dt / 2, n_e + k1 / 2)
+    k3 = dt * dndt(t + dt / 2, n_e + k2 / 2)
+    k4 = dt * dndt(t + dt, n_e + k3)
+    
+    n_e = n_e + (k1 + 2 * k2 + 2 * k3 + k4) / 6
+    t += dt
+    
+        # Collect results and plot every 20 steps
+    if n % 125 == 0:
+        
+        print(t , 'ps')
+        source_term = nc * alpha / (2 * np.sqrt(2) * np.pi**(3/2) * sigma_y**2 * sigma_t) * np.exp(-alpha * X) * \
+                    np.exp(-(Y**2) / (2 * sigma_y**2)) * np.exp(-((t - t0)**2) / (2 * sigma_t**2))
+
+
+        Ex, Ey, _, _ =  compute_divergence_and_field(lu_A, n_e, n_e*0, x, y)
+        jx, jy = compute_current(n_e, Ex, Ey, diff, mu, dx, dy)
+
+        max_n_e = max(max_n_e, np.max(n_e))
+        max_n_h = max(max_n_h, np.max(n_h))
+        max_source = max(max_source, np.max(source_term))
+        max_jx = max(max_jx, np.max(np.abs(jx)))
+        max_jy = max(max_jy, np.max(jy))
+
         params = {
-            'n': n, 'dt': dt, 'x': x, 'y': y, 'n_e': n_e, 'n_h': n_h,
+            't': t, 'x': x, 'y': y, 'n_e': n_e, 'n_h': n_h,
             'source_term': source_term, 'Ex': Ex, 'Ey': Ey, 'X': X, 'Y': Y,
-            'nc': nc, 'jx': jx, 'jy': jy, 'dn_dt': dn_dt
+            'nc': nc, 'jx': jx, 'jy': jy
         }
         if n == 0:
             print("init")
@@ -311,25 +300,26 @@ for n in range(Nt):
         else:
             plot_results(params)
             buf = BytesIO()
-    
-        # Save current plot to an in-memory buffer
+
         
 
         
-        plt.savefig(buf, format='png')
+        plt.savefig(buf, format='png', dpi=400)
         buf.seek(0)
         
         # Read the image from the buffer and append it to the frames list
         frames.append(imageio.v2.imread(buf))
         buf.close()
         
-        # Close the buffer
-    
-            
-# After the loop finishes, save the 3D arrays to .npy files
-# Create GIF from frames
-imageio.mimsave(os.path.join(output_dir,f'simulation_sigma_t_{sigma_t:.2g}.gif'), frames, fps=10)
-np.save(os.path.join(output_dir, f'jx_storage_sigma_t_{sigma_t:.2g}.npy'), jx_storage)
-np.save(os.path.join(output_dir, f'jy_storage_sigma_t_{sigma_t:.2g}.npy'), jy_storage)
+
+
+        
+print(f'max_n_e={max_n_e}')
+print(f'max_n_h={max_n_h}')
+print(f'max_source={max_source}')
+print(f'max_jx={max_jx}')
+print(f'max_jy={max_jy}')
+
+imageio.mimsave(os.path.join(output_dir,f'simulation_sigma_t_{sigma_t:.2g}.gif'), frames, fps=5)
 
 
