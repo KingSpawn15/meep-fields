@@ -7,14 +7,14 @@ from itertools import chain
 from scipy.interpolate import RegularGridInterpolator , interp1d
 from scipy.io import savemat
 from eels_utils.ElectronSpectrum import ElectronSpectrum as es
-from current_densities.current_interpolation import setup_interpolators, get_jx_jy_at
+from current_interpolation_new import setup_interpolators, get_jx_at, get_jy_at
 
 class ProblemSetup:
 
     def __init__(self, sx = None, sy = None, dpml = None, resolution = None):
 
         if sx is None:
-            sx = 200
+            sx = 400
         if sy is None:
             sy = 50
         if dpml is None:
@@ -80,11 +80,27 @@ def current_rectification(sigma_t_sec, t0_sec, weight):
 #     prefactor = (nexc) * 1e-18 * params['alpha'] * (params['v_t_m_sec_1'] / 3e8)**2 
 #     return lambda t: prefactor * np.sin(omega_z * (t-t0)) * np.exp(-(params['gamma'] / Freq_Hz_To_MEEP) * (t-t0)/2) / omega_z if t>t0 else 0
 
-def current_photodember_drift_diffusion(xprime, yprime):
+def current_photodember_diffusion_x(xprime, yprime):
     """Returns a function to get jx at a specific t for given (xprime, yprime)."""
     def jx_t(t):
-        return get_jx_jy_at(xprime, yprime, t / Time_MEEP_To_Sec * 1e12, jx_interpolator)
+        return get_jx_at(xprime, yprime, t / Time_MEEP_To_Sec * 1e12, jx_interpolator)
     return jx_t 
+
+def current_photodember_diffusion_y(xprime, yprime):
+    """Returns a function to get jy at a specific t for given (xprime, yprime)."""
+    def jy_t(t):
+        return get_jy_at(xprime, yprime, t / Time_MEEP_To_Sec * 1e12, jy_interpolator)
+    return jy_t 
+
+# def current_photodember_diffusion_x(position, t):
+
+#     x, y = position.x, position.y
+
+#     if y < 0:
+#         return get_jx_at(-y, x, t / Time_MEEP_To_Sec * 1e12, jx_interpolator)
+
+#     return 0
+
 
 # def current_photodember_with_pulse_time(params, xprime, yprime):
 #     # Precompute constants
@@ -168,26 +184,40 @@ def current_photodember_drift_diffusion(xprime, yprime):
 #     # return lambda t: pulse_envelope(t)
   
 
-def photodember_source(params, xmax, ymax):
-    sl = [[mp.Source(
-        src=mp.CustomSource(src_func=current_photodember_drift_diffusion(yi, xi),is_integrated=True),
+def photodember_source_x(params, xmax, ymax):
+    sl_y = [[mp.Source(
+        src=mp.CustomSource(src_func=current_photodember_diffusion_x(yi, xi),is_integrated=True),
         center=mp.Vector3(xi,-yi),
         component=mp.Ey) for xi in np.arange(-np.fix(xmax),np.fix(xmax) + 0.5, 0.25)] for yi in np.linspace(0,ymax,5)]
-    return list(chain(*sl))
+    return list(chain(*sl_y))
 
+def photodember_source_z(params, xmax, ymax):
+    sl_x = [[mp.Source(
+        src=mp.CustomSource(src_func=current_photodember_diffusion_y(yi, xi),is_integrated=True),
+        center=mp.Vector3(xi,-yi),
+        component=mp.Ex) for xi in np.arange(-np.fix(xmax),np.fix(xmax) + 0.5, 0.25)] for yi in np.linspace(0,ymax,5)]
+    return list(chain(*sl_x))
 
 
 if __name__ == '__main__':
 
     
-    outdir = 'photodember/drift_diffusion/inas'
+    outdir = 'photodember/diffusion/inas/'
     intensity = float(sys.argv[1])
     t0_sec = float(sys.argv[2]) * 1e-12
     fwhm_t_fs = float(sys.argv[3])
     sigma_t = sys.argv[4]
-    fname_jx = f"jx_storage_sigma_t_{sigma_t}.npy"
-    fname_jy = f"jy_storage_sigma_t_{sigma_t}.npy"
-    jx_interpolator, jy_interpolator = setup_interpolators(fname_jx, fname_jy)  
+    # fname_jx = f"jx_storage_sigma_t_{sigma_t}.npy"
+    # fname_jy = f"jy_storage_sigma_t_{sigma_t}.npy"
+    # jx_interpolator, jy_interpolator = setup_interpolators(fname_jx, fname_jy) 
+    
+   # currents_nc_4.00e+10_sigma_14.86.npy
+    jx_interpolator, jy_interpolator = setup_interpolators(
+        "4.00e+10", 
+        "14.86", 
+        base_dir="current_densities", 
+        subdirs=("eps12", "diffusion")
+    )
     # intensity = 10
     # t0_sec = 1 * 1e-12
     # fwhm_t_fs = 50
@@ -199,7 +229,7 @@ if __name__ == '__main__':
 
     ElectricField_MEEP_TO_SI =  (1e-6 * 8.85e-12 * 3e8)
 
-    sx = 200
+    sx = 400
     sy = 50
     dpml = 10
     resolution = 5
@@ -281,27 +311,39 @@ if __name__ == '__main__':
 
     xmax = 4 * params['sigma_spot']
     ymax = 3 * (1 / params['alpha'])
-    source_pd = photodember_source(params, xmax, ymax)
+    source_pd_x = photodember_source_x(params, xmax, ymax)
+    source_pd_z = photodember_source_z(params, xmax, ymax)
+    # source_pd = mp.Source(
+    #     src=mp.CustomSource(src_func=current_photodember_diffusion_x,is_integrated=True),
+    #     component=mp.Ey)
+
+
+    # source_pd = mp.Source(
+    # src=mp.CustomSource(src_func=current_photodember_diffusion_x, is_integrated=True),
+    # component=mp.Ey,  # Electric field in the y-direction
+    # center=mp.Vector3((-xmax + xmax) / 2, -(ymax) / 2),  # Center of the volume
+    # size=mp.Vector3(2 * xmax, ymax))  # Size of the volume)
+    
 
     geometry = [
     mp.Block(
         mp.Vector3(mp.inf, sy/2 + dpml, mp.inf),
         center=mp.Vector3(0,-sy/4 - dpml/2),
-        material=inas_meep,
+        material=mp.Medium(epsilon=inas['epsilon_inf'])
     )]
 
 
-    sim_pd = mp.Simulation(
+    sim_pd_x = mp.Simulation(
         cell_size=mp.Vector3(sx + 2 * dpml, sy + 2 * dpml),
         boundary_layers=[mp.PML(dpml)],
         geometry=geometry,
-        sources=source_pd,
+        sources=source_pd_x,
         resolution=resolution,
         symmetries=None,
         progress_interval = 15
     )
 
-    vals_pd = []
+    vals_pd_x = []
     def get_slice(vals, distance_from_surface):
             return lambda sim : vals.append(sim.get_array(center=mp.Vector3(0,distance_from_surface), size=mp.Vector3(sx,0), component=mp.Ex))
 
@@ -309,11 +351,38 @@ if __name__ == '__main__':
     distance_from_surface = 1
     simulation_end_time_meep = 1000
 
-    sim_pd.reset_meep()
-    sim_pd.run(mp.at_every(record_interval, get_slice(vals_pd, distance_from_surface)),
+    sim_pd_x.reset_meep()
+    sim_pd_x.run(mp.at_every(record_interval, get_slice(vals_pd_x, distance_from_surface)),
             until=simulation_end_time_meep)
 
-    (x,y,z,w)=sim_pd.get_array_metadata(center=mp.Vector3(0,1), size=mp.Vector3(sx,0))
+    (x,y,z,w)=sim_pd_x.get_array_metadata(center=mp.Vector3(0,1), size=mp.Vector3(sx,0))
+   
+
+    sim_pd_z = mp.Simulation(
+        cell_size=mp.Vector3(sx + 2 * dpml, sy + 2 * dpml),
+        boundary_layers=[mp.PML(dpml)],
+        geometry=geometry,
+        sources=source_pd_z,
+        resolution=resolution,
+        symmetries=None,
+        progress_interval = 15
+    )
+
+    vals_pd_z = []
+    def get_slice(vals, distance_from_surface):
+            return lambda sim : vals.append(sim.get_array(center=mp.Vector3(0,distance_from_surface), size=mp.Vector3(sx,0), component=mp.Ex))
+
+    record_interval = 2
+    distance_from_surface = 1
+    simulation_end_time_meep = 1000
+
+    sim_pd_z.reset_meep()
+    sim_pd_z.run(mp.at_every(record_interval, get_slice(vals_pd_z, distance_from_surface)),
+            until=simulation_end_time_meep)
+
+    (x,y,z,w)=sim_pd_z.get_array_metadata(center=mp.Vector3(0,1), size=mp.Vector3(sx,0))
+   
+
    
     if mp.am_master():
    
@@ -327,7 +396,7 @@ if __name__ == '__main__':
 
         plt.figure()
         time_range = simulation_end_time_meep / Time_MEEP_To_Sec * 1e12
-        val_np = np.array(vals_pd) / ElectricField_MEEP_TO_SI
+        val_np = np.array(vals_pd_x) / ElectricField_MEEP_TO_SI
         mm = np.max(val_np)
 
         plt.imshow(val_np.T, 
@@ -336,9 +405,25 @@ if __name__ == '__main__':
                 extent = [0,time_range,-sx/2,sx/2])
         # plt.clim(vmin=-mm, vmax=mm)
         plt.colorbar()
-        plt.savefig(path + '/pdfield_'+ sys.argv[1] + 'fwhm_t_' + sys.argv[3]+'sigma_t_' + sys.argv[4]+'.png', dpi=300)
+        plt.savefig(path + '/pdfield_x_'+ sys.argv[1] + 'fwhm_t_' + sys.argv[3]+'sigma_t_' + sys.argv[4]+'.png', dpi=300)
 
-        out_str = path + '/field_ez_pd_intensity_' + sys.argv[1] + 't0_' + sys.argv[2] + 'fwhm_t_' + sys.argv[3] +'sigma_t_' + sys.argv[4]+ '.mat'
-        savemat(out_str, {'e_pd': vals_pd, 'zstep': x[2]-x[1], 'tstep' : record_interval / Time_MEEP_To_Sec * 1e12})
+        out_str = path + '/field_ez_pd_intensity_x_' + sys.argv[1] + 't0_' + sys.argv[2] + 'fwhm_t_' + sys.argv[3] +'sigma_t_' + sys.argv[4]+ '.mat'
+        savemat(out_str, {'e_pd': vals_pd_x, 'zstep': x[2]-x[1], 'tstep' : record_interval / Time_MEEP_To_Sec * 1e12})
+
+        plt.figure()
+        time_range = simulation_end_time_meep / Time_MEEP_To_Sec * 1e12
+        val_np = np.array(vals_pd_z) / ElectricField_MEEP_TO_SI
+        mm = np.max(val_np)
+
+        plt.imshow(val_np.T, 
+                cmap='bwr',
+                aspect = time_range / sx,
+                extent = [0,time_range,-sx/2,sx/2])
+        # plt.clim(vmin=-mm, vmax=mm)
+        plt.colorbar()
+        plt.savefig(path + '/pdfield_z_'+ sys.argv[1] + 'fwhm_t_' + sys.argv[3]+'sigma_t_' + sys.argv[4]+'.png', dpi=300)
+
+        out_str = path + '/field_ez_pd_intensity_z_' + sys.argv[1] + 't0_' + sys.argv[2] + 'fwhm_t_' + sys.argv[3] +'sigma_t_' + sys.argv[4]+ '.mat'
+        savemat(out_str, {'e_pd': vals_pd_z, 'zstep': x[2]-x[1], 'tstep' : record_interval / Time_MEEP_To_Sec * 1e12})
 
 

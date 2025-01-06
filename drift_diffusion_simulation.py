@@ -6,6 +6,7 @@ from scipy.sparse.linalg import splu
 from scipy.special import erf
 import warnings
 import logging
+import simulation_results_plotter as sim_plot
 
 def assemble_poisson_matrix_neumann(nrows, ncols, hx, hy, eps_in):
     A = lil_matrix((nrows * ncols, nrows * ncols))
@@ -56,10 +57,10 @@ def compute_electric_field(n_e, n_h, params):
 
     return ex, ey
 
-
 def compute_current_gradient_term(n_e, n_h, params):
 
     # compute electric field
+    q_e = 1.6e-19
     ex, ey = compute_electric_field(n_e, n_h, params)
     # calculate j
     ne_dy, ne_dx = np.gradient(n_e, params['hy'], params['hx'])
@@ -77,6 +78,20 @@ def compute_current_gradient_term(n_e, n_h, params):
 
     _, grad_jx_dx = np.gradient(j_x, params['hy'], params['hx'])
     grad_jy_dy, _ = np.gradient(j_y, params['hy'], params['hx'])
+
+    if params['save_tag']:
+        params['saved_results']['n_e'].append(n_e)
+        params['saved_results']['n_h'].append(n_h)
+        params['saved_results']['j_diff_x'].append(j_diff_x * q_e)
+        params['saved_results']['j_diff_y'].append(j_diff_y * q_e)
+        params['saved_results']['j_drift_x'].append(j_drift_x * q_e)
+        params['saved_results']['j_drift_y'].append(j_drift_y * q_e)
+        params['saved_results']['j_x'].append(j_x * q_e)
+        params['saved_results']['j_y'].append(j_y * q_e)
+ 
+        
+        # Reset save_tag after saving
+        params['save_tag'] = False
 
     return grad_jx_dx + grad_jy_dy
 
@@ -96,24 +111,25 @@ def compute_source_term(t, params):
                    np.exp(-(Y**2) / (2 * sigma_y**2)) *
                    np.exp(-((t - t0)**2) / (2 * sigma_t**2)))
     
+    if params['save_tag']:
+        params['saved_results']['source_term'].append(source_term)
+        params['saved_results']['time'].append(t)
+
     return source_term
 
 def compute_decay_term(n, params):
 
     return params['gamma'] * n
 
-
-
 def dndt(t, n_e, n_h, params):
 
-    current_gradient_term = compute_current_gradient_term(n_e, n_h, params)
-
     generation_term = compute_source_term(t, params)
+    
+    current_gradient_term = compute_current_gradient_term(n_e, n_h, params)
 
     decay_term = compute_decay_term(n_e, params)
 
     return current_gradient_term + generation_term - decay_term
-
 
 def dpdt(t, n_h, params):
 
@@ -162,11 +178,14 @@ def solve_drift_diffusion(n_e_0, n_h_0, params):
             warnings.warn("Warning: n_e contained NaN values, setting them to 0.", stacklevel=2)
             n_e[np.isnan(n_e)] = 0
 
-                # Log progress every 300 time steps
+        # Log progress every 300 time steps
         if n % 50 == 0:
             logger.info(f"Progress: time step {n}, time {t:.2f}")
+            params['save_tag'] = True
 
         t += dt
+
+    sim_plot.create_gif(params, gif_path=f"current_densities/eps12/simulation_nc_{params['nc']}.gif", xmax=5)
 
 if __name__ == '__main__':
     
@@ -175,26 +194,41 @@ if __name__ == '__main__':
     #     os.makedirs(output_dir)
 
     params = {
-        "nc": 4e9,
+        "nc": 4e8,
         "alpha": 7,
         "gamma": 3.3,
         "sigma_y": 40 / np.sqrt(8 * np.log(2)),
-        "diff": 0.1,
+        "diff": 0.51,
         "mu": 4,
         "t_r": 4e3,
         "sigma_t": (50 / np.sqrt(8 * np.log(2))) * 1e-3,
         "t0": 0.1,
         
-        "Lx": 60,
-        "Ly": 300,
-        "T": 1,
-        "Nx": 1000,
+        "Lx": 5,
+        "Ly": 100,
+        "T": 3,
+        "Nx": 400,
         "Ny": 250,
         "Nt": 20000,
 
+        'save_tag' : False,
+
+        'saved_results' : {
+        'n_e': [],
+        'n_h': [],
+        'j_diff_x': [],
+        'j_diff_y': [],
+        'j_drift_x': [],
+        'j_drift_y': [],
+        'j_x': [],
+        'j_y': [],
+        'source_term': [],
+        'time': []
     }
 
-    params["dt"] = 1 / params["Nt"]     
+    }
+
+    params["dt"] = params['T'] / params["Nt"]     
     params["x"] = np.linspace(0, params['Lx'], params['Nx'])
     params["y"] = np.linspace(-params['Ly'], params['Ly'], params['Ny'])
     
@@ -221,6 +255,4 @@ if __name__ == '__main__':
 
     solve_drift_diffusion(n_e_0, n_h_0, params)
 
-
-
-
+    print("finished")

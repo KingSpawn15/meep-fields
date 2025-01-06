@@ -1,6 +1,6 @@
 #!/bin/bash
 
-outdir='rectification_pulse_time'
+outdir='rectification_air'
 
 # mpirun -np 8 python3.11 rectification_triple.py 50 $outdir 0.4
 # mpirun -np 8 python3.11 rectification_triple.py 70 $outdir 0.4
@@ -27,14 +27,14 @@ outdir='rectification_pulse_time'
 # mpirun -np 10 python3.11 combined_pd_or.py 30.00 0.6 50
 
 # mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 50
-mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 70
-mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 90
-mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 110
-mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 130
-mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 150
-mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 170
-mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 190
-mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 250
-mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 300
-mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 350
+# mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 70
+# mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 90
+# mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 110
+# mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 130
+# mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 150
+# mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 170
+# mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 190
+# mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 250
+# mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 300
+# mpirun -np 10 python3.11 combined_pd_or.py 10.00 0.6 350
 

@@ -14,7 +14,7 @@ class ProblemSetup:
     def __init__(self, sx = None, sy = None, dpml = None, resolution = None):
 
         if sx is None:
-            sx = 200
+            sx = 400
         if sy is None:
             sy = 50
         if dpml is None:
@@ -67,6 +67,16 @@ def current_rectification(sigma_t_sec, t0_sec, weight):
     return lambda t: - weight * (t-t0) * np.exp(- ((t-t0) ** 2) / (2 * sigma_t **2)) / (2 * sigma_t **2)
 
 
+# def current_rectification(sigma_t_sec, t0_sec, weight):
+    
+#     weight = 50e-15 / np.sqrt(8 * np.log(2)) / sigma_t_sec
+#     t0 = t0_sec / Time_Sec_To_MEEP
+#     sigma_t = sigma_t_sec / Time_Sec_To_MEEP
+
+#     return lambda t: - weight * np.exp(- ((t-t0) ** 2) / (2 * sigma_t **2)) / (2 * sigma_t **2)
+
+
+
 # def polarized_source(phi, sigma_t_sec, t0_sec, source_x, source_y):
 #     return  [
 #             mp.Source(
@@ -86,21 +96,21 @@ def current_rectification(sigma_t_sec, t0_sec, weight):
 def polarized_source_z(sigma_t_sec, t0_sec, source_x, source_y):
     return  [
             mp.Source(
-        src=mp.CustomSource(src_func=current_rectification(sigma_t_sec, t0_sec, 1), is_integrated=False),
+        src=mp.CustomSource(src_func=current_rectification(sigma_t_sec, t0_sec, 1), is_integrated=True),
         center=mp.Vector3(source_x,source_y),
         component=mp.Ex)
             ]
 def polarized_source_y(sigma_t_sec, t0_sec, source_x, source_y):
     return  [
             mp.Source(
-        src=mp.CustomSource(src_func=current_rectification(sigma_t_sec, t0_sec, 1), is_integrated=False),
+        src=mp.CustomSource(src_func=current_rectification(sigma_t_sec, t0_sec, 1), is_integrated=True),
         center=mp.Vector3(source_x,source_y),
         component=mp.Ez)
             ]
 def polarized_source_x(sigma_t_sec, t0_sec, source_x, source_y):
     return  [
             mp.Source(
-        src=mp.CustomSource(src_func=current_rectification(sigma_t_sec, t0_sec, 1), is_integrated=False),
+        src=mp.CustomSource(src_func=current_rectification(sigma_t_sec, t0_sec, 1), is_integrated=True),
         center=mp.Vector3(source_x,source_y),
         component=mp.Ey)
             ]
@@ -110,15 +120,15 @@ def polarized_source_x(sigma_t_sec, t0_sec, source_x, source_y):
 
 if __name__ == '__main__':
 
-    pulse_time_fwhm_fs = float(sys.argv[1])
-    outdir = sys.argv[2]
-    t0_ps = float(sys.argv[3])
+    pulse_time_fwhm_fs = 50
+    outdir = 'rectification_eps_12'
+    t0_ps = 0.1
 
     Freq_Hz_To_MEEP = 3 * 10**14
     Time_Sec_To_MEEP = (1e-6 / 3e8)
     Time_MEEP_To_Sec = 1 / Time_Sec_To_MEEP
 
-    sx = 200
+    sx = 400
     sy = 50
     dpml = 10
     resolution = 5
@@ -147,7 +157,7 @@ if __name__ == '__main__':
     mp.Block(
         mp.Vector3(mp.inf, sy/2 + dpml, mp.inf),
         center=mp.Vector3(0,-sy/4 - dpml/2),
-        material=inas_meep,
+        material=mp.Medium(epsilon=12),
     )]
 
 
@@ -216,7 +226,7 @@ if __name__ == '__main__':
             os.makedirs(path)
             print("The new directory is created!")
 
-        out_str = path + '/field_ez' + str(pulse_time_fwhm_fs) + '_fs' +'shift'+str(t0_ps)+ '_ps'+ '.mat'
+        out_str = path + '/field_ez_with_derivative_' + str(pulse_time_fwhm_fs) + '_fs' +'shift'+str(t0_ps)+ '_ps'+ '.mat'
         savemat(out_str, {'e_or_x': vals_x,
                           'e_or_y': vals_y,
                            'e_or_z': vals_z,
