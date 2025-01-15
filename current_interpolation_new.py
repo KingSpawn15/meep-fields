@@ -17,7 +17,7 @@ def setup_interpolators(nc_formatted, sigma_y_formatted, base_dir="current_densi
         tuple: Interpolators for jx and jy.
     """
     # Construct the full path to the .npy file
-    file_path = os.path.join(base_dir, *subdirs, f"currents_nc_{nc_formatted}_sigma_{sigma_y_formatted}.npy")
+    file_path = os.path.join(base_dir, *subdirs, f"currents_nc_{nc_formatted}_sigma_{sigma_y_formatted}_t0_0.29.npy")
 
 
     # Load the stored currents dictionary from the .npy file
